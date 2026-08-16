@@ -1,12 +1,26 @@
 # ChangeLog for warp
 
-## 3.4.15.1
+## 3.5.0
 
 * Graceful shutdown no longer stops while a connection it accepted is
   unserved. The connection counter it waits on is now raised when the accept
   loop accepts a connection rather than when the thread serving it is
   scheduled, closing a window in which an accepted connection was invisible
   to the shutdown.
+  [#1104](https://github.com/yesodweb/wai/pull/1104)
+
+* Breaking change: `runSettings` and friends now rethrow when `accept()` fails
+  for a reason the listening socket will keep giving, such as `ENFILE` or
+  `ENOMEM`. Previously the accept loop ended and the caller was handed a `()`,
+  which is what a graceful shutdown returns, so a server that could no longer
+  accept was indistinguishable from one that had been asked to stop.
+  [#1106](https://github.com/yesodweb/wai/pull/1106)
+* The accept loop now retries, rather than stopping, on the errors `accept()`
+  reports for a single queued connection: `ENETDOWN`, `EPROTO`, `ENOPROTOOPT`,
+  `EHOSTDOWN`, `ENONET`, `EHOSTUNREACH` and `ENETUNREACH`. `accept(2)` asks for
+  these to be treated like `EAGAIN`, which is how `ECONNABORTED` was already
+  handled. One unreachable client no longer stops the server.
+  [#1106](https://github.com/yesodweb/wai/pull/1106)
 
 ## 3.4.15
 
