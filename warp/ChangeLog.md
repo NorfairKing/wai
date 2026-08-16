@@ -7,6 +7,11 @@
   accepts a connection, rather than on the connection count reported by
   `getCount`, which is raised later, when the thread serving the connection
   is scheduled.
+* `runSettings` and friends now rethrow when `accept()` fails for a reason
+  other than the listening socket being closed on purpose. Previously the
+  accept loop ended and the caller was handed a `()`, which is what a graceful
+  shutdown returns, so a server that could no longer accept was
+  indistinguishable from one that had been asked to stop.
 
 ## 3.4.15
 
