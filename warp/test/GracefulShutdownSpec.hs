@@ -10,7 +10,6 @@ import Control.Concurrent.Async
 import Control.Exception (bracket)
 import Control.Monad (void)
 import Data.IORef
-import Foreign.C.Error (eBADF, errnoToIOError)
 import Network.HTTP.Client
 import Network.HTTP.Types (ok200, status200)
 import Network.Socket
@@ -34,15 +33,15 @@ spec = describe "graceful shutdown" $ do
                 threadDelay 200_000
                 act unmask
 
-            -- Take one connection, then stop accepting, with the error a
-            -- closed listening socket actually gives.  Closing it for real
-            -- would mean closing a descriptor the accept loop is parked on,
-            -- which the IO manager does not survive cleanly.
+            -- Take one connection, then stop accepting by closing the
+            -- listening socket, which is what a graceful shutdown does. The
+            -- close happens here rather than from another thread so that it
+            -- cannot land while the accept loop is parked inside accept().
             acceptOnlyOne sock = do
                 taken <- atomicModifyIORef' accepted $ \n -> (n + 1, n)
                 if taken == 0
                     then accept sock
-                    else ioError (errnoToIOError "accept" eBADF Nothing Nothing)
+                    else close sock >> accept sock
 
             settings =
                 setFork slowFork $
@@ -54,8 +53,14 @@ spec = describe "graceful shutdown" $ do
             app _ respond = respond $ responseLBS status200 [("Content-Length", "0")] ""
 
         bracket openFreePort (close . snd) $ \(testPort, sock) -> do
-            -- Connect before the server starts, so the accept loop has a
-            -- connection waiting for it whatever else the machine is doing.
+            -- Connect before the server exists. openFreePort has already put
+            -- the socket in listen state, so this lands in its accept queue
+            -- in the kernel and stays there: closing the client end sends a
+            -- FIN but does not take it off the queue, and accept() still
+            -- hands it over. Queueing it up front is what makes the accept
+            -- loop's first accept() return immediately, rather than racing a
+            -- client connecting alongside it, which on a loaded machine it
+            -- can lose.
             bracket (openConnection testPort) close $ \_ -> pure ()
 
             withAsync (runSettingsSocket settings sock app) $ \server -> do
